@@ -31,7 +31,7 @@ read64:
   ReadRegStr $0 HKLM "${REG_KEY}" "${REG_VALUE}"
   StrCmp $0 "" done
     StrCpy $APPDATADIR $0
-    
+
 done:
   SetRegView lastused
 !macroend
@@ -45,18 +45,18 @@ Function SelectAppDirPage
   ${If} $0 == error
     Abort
   ${EndIf}
-
-  ${NSD_CreateLabel} 0 0 100% 12u "请选择内部软件的安装目录(并非 EarthVisLab 安装目录)："
-
-  ${NSD_CreateText} 0 20u 80% 12u "$APPDATADIR"
+  ${NSD_CreateLabel} 0 10% 100% 14u "请选择 内部软件 安装目录 (并非 EarthVisLab 安装目录)："
+  ${NSD_CreateText} 0 25% 80% 14u "$APPDATADIR"
   Pop $DirInput
-
-  ${NSD_CreateBrowseButton} 82% 20u 18% 12u "浏览(B)..."
+  ${NSD_CreateBrowseButton} 82% 25% 18% 14u "浏览(B)..."
   Pop $BtnBrowse
   ${NSD_OnClick} $BtnBrowse BrowseDirFunc
 
+  ; 描述
+  ${NSD_CreateLabel} 0 50% 100% 30u "若您本地已经安装了 EarthVisLab 并且您只想安装内部产品软件，可勾选下面的选项；如果您是正常安装或更新，不建议勾选。"
+
   ; 添加复选框
-  ${NSD_CreateCheckBox} 0 40u 100% 12u "仅复制内部软件，不安装 EarthVisLab"
+  ${NSD_CreateCheckBox} 0 75% 60% 14u "仅复制内部软件，不安装 EarthVisLab"
   Pop $CopyOnlyCheckbox
   ${NSD_SetState} $CopyOnlyCheckbox unchecked
 
@@ -65,13 +65,13 @@ FunctionEnd
 
 Function LeaveAppDirPage
   ${NSD_GetText} $DirInput $APPDATADIR
-  
+
   ; 获取复选框状态
   ${NSD_GetState} $CopyOnlyCheckbox $CopyOnlyFlag
-  
+
   Call SaveAppDir
   Call CallMerge
-  
+
   ; 如果选择了仅复制，则退出安装程序
   ${If} $CopyOnlyFlag == 1
     Quit
@@ -130,5 +130,5 @@ Page custom SelectAppDirPage LeaveAppDirPage
 ; Section 必须有
 ; -------------------------------
 Section
- 
+
 SectionEnd
