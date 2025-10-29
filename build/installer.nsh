@@ -5,8 +5,8 @@
 Var APPDATADIR
 Var DirInput
 Var BtnBrowse
-Var CopyOnlyCheckbox
-Var CopyOnlyFlag
+Var ConfirmDialog
+Var BtnExit
 
 !define REG_KEY "Software\\EarthVisLab"
 !define REG_VALUE "AppDir"
@@ -17,7 +17,6 @@ Var CopyOnlyFlag
 !macro preInit
   ; 默认路径
   StrCpy $APPDATADIR "$APPDATA\EarthVisLabApps"
-  StrCpy $CopyOnlyFlag 0
 
   ; 先读 32 位视图
   SetRegView 32
@@ -45,38 +44,60 @@ Function SelectAppDirPage
   ${If} $0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateLabel} 0 10% 100% 14u "请选择 内部软件 安装目录 (并非 EarthVisLab 安装目录)："
-  ${NSD_CreateText} 0 25% 80% 14u "$APPDATADIR"
+
+  ; 标题
+  ${NSD_CreateLabel} 0 10u 100% 12u "目录选择"
+  Pop $0
+  CreateFont $1 "$(^Font)" "14" "700"
+  SendMessage $0 ${WM_SETFONT} $1 0
+
+  ; 提示信息
+  ${NSD_CreateLabel} 0 40u 100% 15u "选择内部软件的安装目录，请点击 「 浏览(B)... 」。"
+  Pop $0
+
+  ${NSD_CreateText} 0 60u 80% 15u "$APPDATADIR"
   Pop $DirInput
-  ${NSD_CreateBrowseButton} 82% 25% 18% 14u "浏览(B)..."
+
+  ${NSD_CreateBrowseButton} 82% 60u 18% 15u "浏览(B)..."
   Pop $BtnBrowse
   ${NSD_OnClick} $BtnBrowse BrowseDirFunc
-
-  ; 描述
-  ${NSD_CreateLabel} 0 50% 100% 30u "若您本地已经安装了 EarthVisLab 并且您只想安装内部产品软件，可勾选下面的选项；如果您是正常安装或更新，不建议勾选。"
-
-  ; 添加复选框
-  ${NSD_CreateCheckBox} 0 75% 60% 14u "仅复制内部软件，不安装 EarthVisLab"
-  Pop $CopyOnlyCheckbox
-  ${NSD_SetState} $CopyOnlyCheckbox unchecked
 
   nsDialogs::Show
 FunctionEnd
 
 Function LeaveAppDirPage
   ${NSD_GetText} $DirInput $APPDATADIR
-
-  ; 获取复选框状态
-  ${NSD_GetState} $CopyOnlyCheckbox $CopyOnlyFlag
-
   Call SaveAppDir
   Call CallMerge
-
-  ; 如果选择了仅复制，则退出安装程序
-  ${If} $CopyOnlyFlag == 1
-    Quit
-  ${EndIf}
 FunctionEnd
+
+; -------------------------------
+; 确认页面（在 SaveAppDir 和 CallMerge 执行后）
+; -------------------------------
+Function ConfirmInstallPage
+  nsDialogs::Create 1018
+  Pop $ConfirmDialog
+  ${If} $ConfirmDialog == error
+    Abort
+  ${EndIf}
+
+  ; 标题
+  ${NSD_CreateLabel} 0 20u 100% 12u "继续"
+  Pop $0
+  CreateFont $1 "$(^Font)" "14" "700"
+  SendMessage $0 ${WM_SETFONT} $1 0
+
+  ; 提示信息
+  ${NSD_CreateLabel} 0 50u 100% 60u "安装 EarthVisLab 请点击 「 下一步 」。"
+  Pop $0
+
+  nsDialogs::Show
+FunctionEnd
+
+Function LeaveConfirmInstallPage
+  ; 此页面离开时不需要做什么，因为SaveAppDir和CallMerge已经执行过了
+FunctionEnd
+
 
 ; -------------------------------
 ; 浏览按钮回调
@@ -125,6 +146,7 @@ FunctionEnd
 ; 页面定义
 ; -------------------------------
 Page custom SelectAppDirPage LeaveAppDirPage
+Page custom ConfirmInstallPage LeaveConfirmInstallPage
 
 ; -------------------------------
 ; Section 必须有
