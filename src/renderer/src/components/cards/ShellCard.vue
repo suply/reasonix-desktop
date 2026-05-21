@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Shell 命令执行卡片 — 对照 desktop/src/ui/cards.tsx ShellCard
-import { computed } from "vue"
+import { ref, computed } from "vue"
 
 const props = defineProps<{
   command: string
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   alwaysAllow: []
 }>()
 
+const open = ref(false)
 const tone = computed(() => {
   if (props.state === "failed") return "danger"
   if (props.state === "done") return "success"
@@ -44,7 +45,7 @@ function highlightLine(ln: string): string {
 
 <template>
   <div class="card" :data-tone="tone" data-compact>
-    <div class="card-head">
+    <button class="card-head" @click="open = !open">
       <span class="ico">💻</span>
       <span class="kind">shell</span>
       <span class="name">shell</span>
@@ -55,9 +56,9 @@ function highlightLine(ln: string): string {
           {{ (durationMs / 1000).toFixed(2) }}s
         </span>
       </span>
-      <span class="chev">▾</span>
-    </div>
-    <div class="card-body">
+      <span class="chev" :class="{ flipped: !open }">▾</span>
+    </button>
+    <div v-show="open" class="card-body">
       <div class="shell">
         <div class="cmd-line">
           <span class="prompt">$</span>
@@ -70,7 +71,7 @@ function highlightLine(ln: string): string {
     </div>
 
     <!-- 待审批 -->
-    <div v-if="state === 'await'" class="approve-row">
+    <div v-if="state === 'await' && open" class="approve-row">
       <div class="why">
         <b>等待执行</b> — 是否允许执行此命令？
       </div>
@@ -113,7 +114,8 @@ function highlightLine(ln: string): string {
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .meta-dur { font-family: ui-monospace, monospace; }
-.chev { font-size: 10px; color: var(--el-text-color-placeholder); margin-left: 4px; }
+.chev { font-size: 10px; color: var(--el-text-color-placeholder); margin-left: 4px; transition: transform 0.15s; }
+.chev.flipped { transform: rotate(-90deg); }
 
 .card-body { padding: 8px 14px; }
 

@@ -46,6 +46,10 @@ function deleteSession(name: string) {
     cancelButtonText: "取消",
     type: "warning",
   }).then(() => {
+    // 删除的是当前会话 → 清空聊天区
+    if (name === session.currentSession) {
+      session.clearMessages()
+    }
     session.sendCommand({ cmd: "session_delete", name })
   }).catch(() => { })
 }
@@ -54,7 +58,7 @@ function deleteSession(name: string) {
 <template>
   <aside class="sidebar">
     <div class="side-head">
-      <button class="new-btn" @click="session.sendCommand({ cmd: 'new_chat' })">
+      <button class="new-btn" @click="session.sendCommand({ cmd: 'new_chat' }); session.clearMessages()">
         <span class="new-icon">+</span>
         <span>新建对话</span>
       </button>

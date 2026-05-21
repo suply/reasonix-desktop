@@ -26,7 +26,7 @@ const workdirOpen = ref(false)
 
 function buildCommands(): CommandItem[] {
   return [
-    { id: "new-chat", group: "nav", label: "新建对话", icon: "💬", shortcut: ["mod", "N"], run: () => session.sendCommand({ cmd: "new_chat" }) },
+    { id: "new-chat", group: "nav", label: "新建对话", icon: "💬", shortcut: ["mod", "N"], run: () => { session.sendCommand({ cmd: "new_chat" }); session.clearMessages() } },
     { id: "settings", group: "settings", label: "打开设置", icon: "⚙️", shortcut: ["mod", ","], run: () => { settingsOpen.value = true } },
     { id: "jobs", group: "action", label: "后台任务", icon: "⚙️", shortcut: ["mod", "J"], run: () => { jobsOpen.value = true } },
   ]

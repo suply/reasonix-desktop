@@ -81,12 +81,18 @@ export const useSessionStore = defineStore("session", () => {
   function handleEvent(event: IncomingEvent) {
     switch (event.type) {
       case "user.message":
-        messages.value.push({
-          kind: "user",
-          text: event.text,
-          clientId: String(event.id),
-          turn: event.turn,
-        })
+        // 去重：乐观添加的 user 消息已经有了相同文本，跳过 CLI 回声
+        const hasText = messages.value.some(
+          (m) => m.kind === "user" && m.text === event.text,
+        )
+        if (!hasText) {
+          messages.value.push({
+            kind: "user",
+            text: event.text,
+            clientId: String(event.id),
+            turn: event.turn,
+          })
+        }
         break
 
       case "model.turn.started":
@@ -219,6 +225,26 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
+  // ─── 乐观添加用户消息（Composer 发送前调用）───
+  function addUserMessage(text: string) {
+    const turn = messages.value.reduce((max, m) => {
+      if (m.kind === "user" || m.kind === "assistant") return Math.max(max, m.turn)
+      return max
+    }, 0) + 1
+    messages.value.push({
+      kind: "user",
+      text,
+      clientId: `c-${Date.now()}`,
+      turn,
+    })
+  }
+
+  // ─── 清空消息（新建对话/清屏）───
+  function clearMessages() {
+    messages.value = []
+    currentSession.value = ""
+  }
+
   return {
     messages,
     currentSession,
@@ -229,5 +255,7 @@ export const useSessionStore = defineStore("session", () => {
     resetRpc,
     sendCommand,
     handleEvent,
+    clearMessages,
+    addUserMessage,
   }
 })

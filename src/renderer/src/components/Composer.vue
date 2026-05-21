@@ -9,6 +9,8 @@ const inputText = ref("")
 function sendMessage() {
   const text = inputText.value.trim()
   if (!text) return
+  // 乐观更新：先加到本地，再发到 CLI（源码 App.tsx:1301-1302）
+  session.addUserMessage(text)
   session.sendCommand({ cmd: "user_input", text })
   inputText.value = ""
 }
