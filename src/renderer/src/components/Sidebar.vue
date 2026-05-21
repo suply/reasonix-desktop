@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { useAppStore } from "../stores/app"
 import { useSettingsStore } from "../stores/settings"
+import { useSessionStore } from "../stores/session"
+
+const session = useSessionStore()
 
 defineEmits<{
   openSettings: []
@@ -13,7 +16,10 @@ const settings = useSettingsStore()
 
 <template>
   <aside class="sidebar">
-    <!-- 侧边栏头部（预留） -->
+    <!-- 新建对话 -->
+    <button class="new-chat-btn" @click="session.sendCommand({ cmd: 'new_chat' })">
+      + 新建对话
+    </button>
 
     <div class="session-list">
       <div class="session-item" v-for="s in appState.sessions" :key="s.name">
@@ -33,12 +39,32 @@ const settings = useSettingsStore()
 
 <style scoped>
 .sidebar {
-  width: 240px;
-  min-width: 240px;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
   display: flex;
   flex-direction: column;
   background: var(--el-bg-color-page);
   border-right: 1px solid var(--el-border-color-light);
+}
+
+.new-chat-btn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 6px 12px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.new-chat-btn:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
 }
 
 .session-list {
@@ -48,10 +74,13 @@ const settings = useSettingsStore()
 }
 
 .session-item {
-  padding: 8px 12px;
+  padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-item:hover {

@@ -41,7 +41,7 @@ function createWindow(): BrowserWindow {
     center: true,
     resizable: true,
     frame: true,
-    // autoHideMenuBar: true,
+    autoHideMenuBar: true,
     ...(isMac ? { transparent: true, backgroundColor: "#00000000" } : { backgroundColor: "#0b0b0b" }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
