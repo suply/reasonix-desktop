@@ -104,19 +104,9 @@ function resolveCli(): { program: string; args: string[] } {
     }
   }
 
-  // ── 4. Dev: Electron's Node + npm-installed reasonix ──
-  const nodePath = process.execPath;
-  try {
-    // require.resolve resolves from electron-vite's CJS context (out/main/)
-    // so use module.createRequire or resolve against project root.
-    const cliPath = resolveReasonixCliPath();
-    checkNodeVersion(nodePath);
-    return { program: nodePath, args: [cliPath, "desktop"] };
-  } catch {
-    // reasonix not installed via npm — fall through to system Node
-  }
-
-  // ── Fallback: system Node + PATH ──
+  // ── 4. Dev: system Node + npm-installed reasonix ──
+  // 注意：不能用 process.execPath（= electron.exe），必须用系统 Node
+  // 来 spawn 纯 Node.js 子进程。
   const sysNode = findSystemNode();
   checkNodeVersion(sysNode);
   const cliPath = resolveReasonixCliPath();
