@@ -31,6 +31,7 @@ export const useSessionStore = defineStore("session", () => {
   // ─── 状态 ───
   const messages = ref<ChatMessage[]>([])
   const activeTabId = ref("")
+  const currentSession = ref("")
   const usageStats = ref<UsageStats>({
     totalCostUsd: 0,
     totalPromptTokens: 0,
@@ -191,6 +192,23 @@ export const useSessionStore = defineStore("session", () => {
         }
         break
 
+      case "$session_loaded":
+        currentSession.value = event.name
+        messages.value = []
+        for (const m of event.messages) {
+          if (m.kind === "user") {
+            messages.value.push({ kind: "user", text: m.text, clientId: "loaded", turn: 0 })
+          } else if (m.kind === "assistant") {
+            const segments = m.segments.map((s: any) => {
+              if (s.kind === "tool") return { kind: "tool" as const, callId: s.callId || "", name: s.name || "", args: s.args || "", result: s.result, ok: s.ok, durationMs: s.durationMs }
+              if (s.kind === "text" || s.kind === "reasoning") return { kind: s.kind, text: s.text }
+              return { kind: "text" as const, text: "" }
+            })
+            messages.value.push({ kind: "assistant", turn: m.turn || 0, segments, pending: false })
+          }
+        }
+        break
+
       case "status":
         messages.value.push({ kind: "status", text: event.text })
         break
@@ -203,6 +221,7 @@ export const useSessionStore = defineStore("session", () => {
 
   return {
     messages,
+    currentSession,
     activeTabId,
     usageStats,
     rpcReady,
