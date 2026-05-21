@@ -11,8 +11,18 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  # Bundled Node.js for spawning the reasonix CLI
+  - from: resources/node
+    to: node
+    filter:
+      - "**/*"
 asarUnpack:
-  - resources/**
+  # Unpack the bundled Node binary (can't run from inside asar)
+  - resources/node/**
+  # Unpack reasonix tokenizer data (loaded by path at runtime)
+  - "**/node_modules/reasonix/data/**"
+  - "**/node_modules/reasonix/dist/**"
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
