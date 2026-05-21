@@ -1,83 +1,124 @@
 <script setup lang="ts">
-// 推理过程卡片（可折叠）
+// 推理过程卡片 — 对照 desktop/src/ui/cards.tsx ReasoningCard
 import { ref } from "vue"
 
-const props = defineProps<{
+defineProps<{
   text: string
+  tokens?: number
+  elapsed?: string
+  model?: string
 }>()
 
-const expanded = ref(false)
-const lines = props.text.split("\n")
-const preview = lines.length > 3 ? lines.slice(0, 3).join("\n") + "..." : props.text
+const open = ref(false)
+
+function formatPara(text: string): string {
+  return text
+    .replace(/`([^`]+)`/g, '<span class="hl">$1</span>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+}
 </script>
 
 <template>
-  <div class="reasoning-card">
-    <button class="reasoning-toggle" @click="expanded = !expanded">
-      <span class="toggle-icon">{{ expanded ? "▼" : "▶" }}</span>
-      <span>推理过程</span>
-      <span class="reasoning-count">{{ lines.length }} 行</span>
+  <div class="card" data-tone="violet" data-compact>
+    <button class="card-head" @click="open = !open">
+      <span class="ico">🧠</span>
+      <span class="kind">reasoning</span>
+      <span class="name">推理过程</span>
+      <span class="grow" />
+      <span class="meta">
+        <span v-if="elapsed || tokens">
+          {{ elapsed ?? '' }}{{ elapsed && tokens ? ' · ' : '' }}{{ tokens ? `${tokens.toLocaleString()} t` : '' }}
+        </span>
+        <span class="status-dot done" />
+      </span>
+      <span class="chev" :class="{ flipped: !open }">▾</span>
     </button>
-    <div v-show="expanded" class="reasoning-content">
-      <pre>{{ text }}</pre>
-    </div>
-    <div v-show="!expanded" class="reasoning-preview">
-      <pre>{{ preview }}</pre>
+    <div v-show="open" class="card-body">
+      <div class="reason">
+        <div class="stream">
+          <p v-for="(para, i) in text.split(/\n\n+/)" :key="i" v-html="formatPara(para)" />
+        </div>
+        <div v-if="model || tokens !== undefined" class="meta-row">
+          <span v-if="model"><span class="k">模型</span> {{ model }}</span>
+          <span v-if="tokens !== undefined"><span class="k">token</span> {{ tokens.toLocaleString() }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.reasoning-card {
-  background: var(--el-color-warning-light-9);
-  border: 1px solid var(--el-color-warning-light-7);
+.card {
+  border: 1px solid var(--el-border-color);
   border-radius: 8px;
-  margin: 8px 0;
   overflow: hidden;
+  margin: 8px 0;
+  background: var(--el-bg-color);
 }
+.card[data-tone="violet"] { border-left: 3px solid #a78bfa; }
+.card[data-compact] .card-head { padding: 6px 12px; }
 
-.reasoning-toggle {
+.card-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
+  padding: 8px 14px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-color-warning);
+  border: none;
+  background: var(--el-fill-color);
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
+.card-head:hover { background: var(--el-fill-color-light); }
 
-.reasoning-toggle:hover {
-  background: var(--el-color-warning-light-8);
+.ico { font-size: 14px; width: 16px; text-align: center; }
+.kind { font-weight: 600; color: var(--el-text-color-secondary); text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+.name { font-weight: 500; font-size: 12px; color: var(--el-text-color-secondary); }
+.grow { flex: 1; }
+
+.meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--el-text-color-secondary); }
+
+.status-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
 }
+.status-dot.done { background: var(--el-color-success); }
 
-.toggle-icon {
+.chev {
   font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  margin-left: 4px;
+  transition: transform 0.15s;
 }
+.chev.flipped { transform: rotate(-90deg); }
 
-.reasoning-count {
-  margin-left: auto;
-  font-weight: 400;
-  font-size: 11px;
+.card-body { padding: 8px 14px; }
+
+.reason .stream p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--el-text-color-secondary);
 }
-
-.reasoning-content pre,
-.reasoning-preview pre {
-  padding: 8px 12px;
+.reason :deep(.hl) {
+  background: var(--el-color-primary-light-9);
+  padding: 1px 4px;
+  border-radius: 3px;
   font-family: ui-monospace, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--el-text-color-secondary);
-  margin: 0;
+  font-size: 0.9em;
 }
 
-.reasoning-preview pre {
-  opacity: 0.6;
+.meta-row {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--el-border-color-light);
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
+.meta-row .k { color: var(--el-text-color-secondary); }
 </style>

@@ -40,7 +40,7 @@ function createWindow(): BrowserWindow {
     show: false,
     center: true,
     resizable: true,
-    frame: false,
+    frame: true,
     // autoHideMenuBar: true,
     ...(isMac ? { transparent: true, backgroundColor: "#00000000" } : { backgroundColor: "#0b0b0b" }),
     webPreferences: {

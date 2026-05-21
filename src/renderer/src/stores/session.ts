@@ -99,26 +99,52 @@ export const useSessionStore = defineStore("session", () => {
 
       case "model.delta":
         // 追加到当前消息的最后一段
-        const lastMsg = messages.value[messages.value.length - 1]
-        if (lastMsg?.kind === "assistant" && lastMsg.pending) {
-          const lastSeg = lastMsg.segments[lastMsg.segments.length - 1]
-          if (lastSeg?.kind === event.channel) {
-            lastSeg.text += event.text
+        const deltaMsg = messages.value[messages.value.length - 1]
+        if (deltaMsg?.kind === "assistant" && deltaMsg.pending) {
+          // channel → kind 映射: content → text, reasoning → reasoning, tool_args → tool_args
+          const segKind = event.channel === "content" ? "text" : event.channel as "reasoning" | "tool_args"
+          const lastSeg = deltaMsg.segments[deltaMsg.segments.length - 1]
+          if (lastSeg?.kind === segKind && lastSeg.kind !== "tool_args") {
+            // 同类型连续追加
+            ;(lastSeg as any).text += event.text
           } else {
-            lastMsg.segments.push({
-              kind: event.channel as "text" | "reasoning" | "tool_args",
-              text: event.text,
-              ...(event.channel === "tool_args" ? { callId: "", name: "", args: "" } : {}),
-            } as any)
+            // 新段
+            const base = { kind: segKind, text: event.text } as any
+            if (event.channel === "tool_args") {
+              base.callId = ""
+              base.name = ""
+              base.args = ""
+            }
+            deltaMsg.segments.push(base)
           }
         }
         break
 
       case "model.final":
-        // 标记完成
+        // 调试日志
+        console.log("[event] model.final", { contentLen: event.content?.length, hasReasoning: !!event.reasoningContent, turn: event.turn })
+        // 标记完成，用 model.final 的完整内容替换/添加 text 段
         const finalMsg = messages.value[messages.value.length - 1]
         if (finalMsg?.kind === "assistant") {
           finalMsg.pending = false
+          // 始终用 model.final.content 设置 text 段（替换可能不完整的 delta 流式内容）
+          if (event.content) {
+            const textIdx = finalMsg.segments.findIndex((s) => s.kind === "text")
+            if (textIdx >= 0) {
+              finalMsg.segments[textIdx] = { kind: "text", text: event.content }
+            } else {
+              finalMsg.segments.push({ kind: "text", text: event.content })
+            }
+          }
+          // 同样处理 reasoningContent
+          if (event.reasoningContent) {
+            const reasonIdx = finalMsg.segments.findIndex((s) => s.kind === "reasoning")
+            if (reasonIdx >= 0) {
+              finalMsg.segments[reasonIdx] = { kind: "reasoning", text: event.reasoningContent }
+            } else {
+              finalMsg.segments.push({ kind: "reasoning", text: event.reasoningContent })
+            }
+          }
         }
         break
 
