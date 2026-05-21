@@ -67,6 +67,20 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
+  // ─── 忙碌状态 ───
+  const busy = ref(false)
+  // ─── 排队消息（忙碌时输入暂存）───
+  const queuedSends = ref<string[]>([])
+
+  // ─── @-mention 状态 ───
+  const mentionResults = ref<{ nonce: number; query: string; results: string[] } | null>(null)
+  const mentionPreview = ref<{ nonce: number; path: string; head: string; totalLines: number } | null>(null)
+
+  // ─── 中止当前对话 ───
+  function abort() {
+    sendCommand({ cmd: "abort" })
+  }
+
   // ─── 发送命令到主进程 ───
   function sendCommand(cmd: OutgoingCommand) {
     if (!rpcReady.value) {
@@ -80,7 +94,13 @@ export const useSessionStore = defineStore("session", () => {
   // ─── 处理事件 ───
   function handleEvent(event: IncomingEvent) {
     switch (event.type) {
+      case "$turn_complete":
+        busy.value = false
+        queuedSends.value = []
+        break
+
       case "user.message":
+        busy.value = true
         // 去重：乐观添加的 user 消息已经有了相同文本，跳过 CLI 回声
         const hasText = messages.value.some(
           (m) => m.kind === "user" && m.text === event.text,
@@ -96,6 +116,7 @@ export const useSessionStore = defineStore("session", () => {
         break
 
       case "model.turn.started":
+        busy.value = true
         messages.value.push({
           kind: "assistant",
           turn: event.turn,
@@ -199,6 +220,7 @@ export const useSessionStore = defineStore("session", () => {
         break
 
       case "$session_loaded":
+        busy.value = false
         currentSession.value = event.name
         messages.value = []
         for (const m of event.messages) {
@@ -215,17 +237,35 @@ export const useSessionStore = defineStore("session", () => {
         }
         break
 
+      case "$mention_results":
+        mentionResults.value = { nonce: event.nonce, query: event.query, results: event.results }
+        break
+
+      case "$mention_preview":
+        mentionPreview.value = { nonce: event.nonce, path: event.path, head: event.head, totalLines: event.totalLines }
+        break
+
       case "status":
         messages.value.push({ kind: "status", text: event.text })
         break
 
       case "error":
+        busy.value = false
         messages.value.push({ kind: "error", message: event.message })
         break
     }
   }
 
   // ─── 乐观添加用户消息（Composer 发送前调用）───
+  // ─── 排队消息（忙碌时暂存）───
+  function queueSend(text: string) {
+    queuedSends.value.push(text)
+  }
+
+  function dequeueSend(index: number) {
+    queuedSends.value.splice(index, 1)
+  }
+
   function addUserMessage(text: string) {
     const turn = messages.value.reduce((max, m) => {
       if (m.kind === "user" || m.kind === "assistant") return Math.max(max, m.turn)
@@ -251,11 +291,18 @@ export const useSessionStore = defineStore("session", () => {
     activeTabId,
     usageStats,
     rpcReady,
+    busy,
+    queuedSends,
+    mentionResults,
+    mentionPreview,
     spawnRpc,
     resetRpc,
     sendCommand,
+    abort,
     handleEvent,
     clearMessages,
     addUserMessage,
+    queueSend,
+    dequeueSend,
   }
 })
