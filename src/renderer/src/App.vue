@@ -24,7 +24,7 @@ const paletteOpen = ref(false)
 const jobsOpen = ref(false)
 const settingsOpen = ref(false)
 const workdirOpen = ref(false)
-const ctxOpen = ref(true)
+const ctxOpen = ref(false)
 
 function buildCommands(): CommandItem[] {
   const hasMessages = session.messages.length > 0

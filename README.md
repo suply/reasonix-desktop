@@ -2,7 +2,11 @@
 
 > [中文版](./README.zh-CN.md)
 
-An **Electron** desktop client for [Reasonix](https://github.com/esengine/DeepSeek-Reasonix) — the DeepSeek-native agentic coding framework. This is a port of the original [Tauri + React desktop app](https://github.com/esengine/DeepSeek-Reasonix/tree/main/desktop) to **Electron + Vue 3 + Element Plus**.
+An **Electron** desktop client for [Reasonix](https://github.com/esengine/DeepSeek-Reasonix) — the DeepSeek-native agentic coding framework. This is a port of the original [Tauri + React desktop app](https://github.com/esengine/DeepSeek-Reasonix/tree/main/desktop) to **Electron + Vue 3 + Element Plus**.Retain core functions, and simplify to the utmost.
+
+<p align="center">
+  <img src="ReasonixDesktop.png" alt="ReasonixDesktop" style="width: 100%;">
+</p>
 
 ## Tech Stack
 

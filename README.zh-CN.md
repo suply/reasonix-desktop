@@ -2,8 +2,12 @@
 
 > [English](./README.md)
 
-**Reasonix** 的桌面客户端 — 基于 Electron + Vue 3 + Element Plus 构建。  
-本项目是 [原版 Tauri + React 桌面端](https://github.com/esengine/DeepSeek-Reasonix/tree/main/desktop) 的移植版本。
+**Reasonix** 的桌面客户端 — 基于 Electron + Vue 3 + Element Plus 构建。
+本项目是 [原版 Tauri + React 桌面端](https://github.com/esengine/DeepSeek-Reasonix/tree/main/desktop) 的移植版本，保留核心功能，极致简化。
+
+<p align="center">
+  <img src="ReasonixDesktop.png" alt="ReasonixDesktop" style="width: 100%;">
+</p>
 
 ## 技术栈
 

@@ -73,4 +73,9 @@ const rendered = computed(() => md.render(props.content))
   background: var(--el-fill-color-light);
   font-weight: 600;
 }
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--el-border-color-light);
+  margin: 1em 0;
+}
 </style>

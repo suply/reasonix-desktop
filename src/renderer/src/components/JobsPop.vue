@@ -21,14 +21,24 @@ watch(
   () => props.open,
   (v) => {
     if (v) {
-      session.sendCommand({ cmd: "jobs_list" })
-      timer = setInterval(() => tick.value++, 600)
+      session.sendCommand({ cmd: "jobs_list" }); lastRefresh.value = Date.now()
+      timer = setInterval(() => {
+        tick.value++
+        session.sendCommand({ cmd: "jobs_list" }); lastRefresh.value = Date.now()
+      }, 1500)
     } else {
       if (timer) clearInterval(timer)
       timer = null
     }
   },
 )
+
+// busy→false 时刷新任务列表
+watch(() => session.busy, (busy) => {
+  if (!busy && props.open) {
+    session.sendCommand({ cmd: "jobs_list" }); lastRefresh.value = Date.now()
+  }
+})
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
@@ -50,6 +60,9 @@ watch(
 const running = computed(() => appState.jobs.filter((j) => j.running))
 const exited = computed(() => appState.jobs.filter((j) => !j.running))
 
+/** 最后刷新时间戳 */
+const lastRefresh = ref(0)
+
 function formatElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const s = ms / 1000
@@ -60,7 +73,9 @@ function formatElapsed(ms: number): string {
 }
 
 function liveElapsed(startedAt: number, running: boolean): number {
-  return (running ? Date.now() : startedAt) - startedAt
+  // 运行中：startedAt = 启动时间戳 → Date.now() - startedAt
+  // 已退出：startedAt = 耗时(ms) → 直接用
+  return running ? Date.now() - startedAt : startedAt
 }
 
 function toggleExpand(id: number) {
@@ -104,8 +119,8 @@ function stopAll() {
         <!-- 列表 -->
         <div class="jobs-body">
           <div v-if="appState.jobs.length === 0" class="jobs-empty">没有后台任务</div>
-
-          <template v-else>
+        <template v-else>
+          <div v-if="lastRefresh > 0" class="jobs-debug">上次刷新: {{ new Date(lastRefresh).toLocaleTimeString() }} · 记录数: {{ appState.jobs.length }}</div>
             <!-- 运行中 -->
             <div v-if="running.length > 0" class="jobs-grp">运行中</div>
             <div v-for="job in running" :key="job.id" class="job-row" data-status="running">
@@ -197,9 +212,10 @@ function stopAll() {
   width: 640px;
   max-width: 90vw;
   max-height: 70vh;
-  background: var(--el-bg-color);
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -211,14 +227,15 @@ function stopAll() {
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-light);
 }
 
 .ico { display: flex; align-items: center; justify-content: center; font-size: 18px; }
-.tt { font-weight: 600; font-size: 14px; }
+.tt { font-weight: 700; font-size: 15px; color: var(--el-text-color-primary); }
 .ss { font-size: 12px; color: var(--el-text-color-secondary); }
 .ss .b.ok { color: var(--el-color-success); font-weight: 600; }
-.ss .b.mut { color: var(--el-text-color-secondary); font-weight: 600; }
+.ss .b.mut { color: var(--el-text-color-primary); font-weight: 600; }
 
 .grow { flex: 1; }
 
@@ -261,15 +278,18 @@ function stopAll() {
 .job-row {
   border-bottom: 1px solid var(--el-border-color-light);
 }
+.job-row[data-status="running"] .jr-main {
+  background: var(--el-color-primary-light-9);
+}
 .jr-main {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.12s;
 }
-.jr-main:hover { background: var(--el-fill-color-light); }
+.jr-main:hover { background: var(--el-fill-color); }
 
 .jr-state {
   display: flex;
@@ -299,7 +319,8 @@ function stopAll() {
 }
 .jr-kind-label {
   font-size: 11px;
-  color: var(--el-text-color-placeholder);
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 
@@ -307,11 +328,13 @@ function stopAll() {
 .nm {
   font-family: ui-monospace, monospace;
   font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sub { font-size: 11px; color: var(--el-text-color-secondary); }
+.sub { font-size: 11px; color: var(--el-text-color-placeholder); }
 .sub .ses { }
 .sub .rk { color: var(--el-color-danger); }
 
@@ -364,9 +387,17 @@ function stopAll() {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border-top: 1px solid var(--el-border-color-light);
+  border-top: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-light);
   font-size: 11px;
   color: var(--el-text-color-placeholder);
 }
 .jobs-foot .v { color: var(--el-text-color-secondary); font-weight: 600; }
+
+.jobs-debug {
+  padding: 4px 16px;
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  font-family: ui-monospace, monospace;
+}
 </style>

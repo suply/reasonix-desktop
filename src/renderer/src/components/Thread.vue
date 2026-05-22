@@ -17,6 +17,7 @@ import {
   PathAccessApprovalCard,
   ChoiceApprovalCard,
 } from "./cards/approval/index"
+import ActivityHeatmap from "./ActivityHeatmap.vue"
 import { Icons } from "./icons"
 import { ElMessage } from "element-plus"
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue"
@@ -186,9 +187,12 @@ function extractCommand(args: string): string | undefined {
         <!-- ═══ 消息列表 ═══ -->
         <template v-if="session.messages.length > 0">
           <template v-for="(msg, idx) in session.messages" :key="idx">
-            <div v-if="msg.kind === 'user'" :ref="(el) => setMsgRef(el as HTMLElement | null, idx)" class="msg msg-user">
+            <div v-if="msg.kind === 'user'" :ref="(el) => setMsgRef(el as HTMLElement | null, idx)"
+              class="msg msg-user">
               <div class="body">
-                <div class="msg-text"><Markdown :content="msg.text" /></div>
+                <div class="msg-text">
+                  <Markdown :content="msg.text" />
+                </div>
               </div>
             </div>
 
@@ -196,7 +200,8 @@ function extractCommand(args: string): string | undefined {
               <div class="body">
                 <span v-if="msg.pending" class="pending-label" style="margin-bottom:4px;display:block">思考中...</span>
                 <template v-for="(seg, si) in msg.segments" :key="si">
-                  <ReasoningCard v-if="seg.kind === 'reasoning'" :text="seg.text" :streaming="msg.pending && si === msg.segments.length - 1" :default-open="si === 0" />
+                  <ReasoningCard v-if="seg.kind === 'reasoning'" :text="seg.text"
+                    :streaming="msg.pending && si === msg.segments.length - 1" :default-open="si === 0" />
                   <div v-else-if="seg.kind === 'text'" class="msg-text">
                     <Markdown :content="seg.text" />
                   </div>
@@ -226,19 +231,14 @@ function extractCommand(args: string): string | undefined {
 
         <!-- ═══ 空状态 ═══ -->
         <div v-if="session.messages.length === 0 && !session.activePlan" class="thread-empty">
-          <div class="empty-text">开始对话...</div>
+          <ActivityHeatmap />
         </div>
 
         <!-- ═══ 审批工作流卡片 ═══ -->
-        <PlanBanner
-          v-if="session.activePlan && session.activePlan.steps.length > 0"
-          :plan="session.activePlan"
-          @dismiss="session.sendCommand({ cmd: 'new_chat' }); session.clearMessages()"
-        />
-        <ActivePlanTaskCard
-          v-if="session.activePlan && session.activePlan.steps.length > 0"
-          :plan="session.activePlan"
-        />
+        <PlanBanner v-if="session.activePlan && session.activePlan.steps.length > 0" :plan="session.activePlan"
+          @dismiss="session.sendCommand({ cmd: 'new_chat' }); session.clearMessages()" />
+        <ActivePlanTaskCard v-if="session.activePlan && session.activePlan.steps.length > 0"
+          :plan="session.activePlan" />
         <PlanApprovalCard v-if="session.pendingPlan" :plan="session.pendingPlan" />
         <CheckpointApprovalCard v-if="session.pendingCheckpoint" :cp="session.pendingCheckpoint" />
         <RevisionApprovalCard v-if="session.pendingRevision" :revision="session.pendingRevision" />
@@ -255,13 +255,7 @@ function extractCommand(args: string): string | undefined {
 
     <!-- 消息导航点 -->
     <div class="msg-nav">
-      <el-tooltip
-        v-for="(u, i) in userMessages"
-        :key="i"
-        :content="u.text"
-        placement="right"
-        :show-after="200"
-      >
+      <el-tooltip v-for="(u, i) in userMessages" :key="i" :content="u.text" placement="right" :show-after="200">
         <div class="msg-dot" @click="scrollToUser(i)">
           <span class="dot" />
         </div>
@@ -284,16 +278,20 @@ function extractCommand(args: string): string | undefined {
 .thread::-webkit-scrollbar {
   width: 6px;
 }
+
 .thread::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .thread::-webkit-scrollbar-track-piece {
   background: transparent;
 }
+
 .thread::-webkit-scrollbar-thumb {
   background: var(--el-border-color);
   border-radius: 3px;
 }
+
 .thread::-webkit-scrollbar-thumb:hover {
   background: var(--el-text-color-placeholder);
 }
@@ -327,11 +325,13 @@ function extractCommand(args: string): string | undefined {
   transition: opacity 0.15s, transform 0.15s;
   opacity: 0.9;
 }
+
 .thread-jump-bottom span {
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .thread-jump-bottom:hover {
   opacity: 1;
   background: var(--el-fill-color);
@@ -356,8 +356,15 @@ function extractCommand(args: string): string | undefined {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ─── 用户消息：靠右 ─── */
@@ -368,9 +375,9 @@ function extractCommand(args: string): string | undefined {
 }
 
 .msg-user .msg-text {
-  background: var(--el-color-primary-light-9);
+  background: var(--el-bg-color-overlay);
   border-radius: 12px;
-  padding: 10px 14px;
+  padding: 6px 14px;
   font-size: 14px;
   word-break: break-word;
 }

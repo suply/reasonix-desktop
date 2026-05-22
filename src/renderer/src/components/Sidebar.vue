@@ -105,6 +105,7 @@ function deleteSession(name: string) {
         <button class="foot-btn" @click="$emit('openJobs')" title="后台任务">
           <span class="ico" v-html="Icons.terminal()" />
           <span class="label">后台</span>
+          <span v-if="appState.jobs.some(j => j.running)" class="jobs-dot" />
         </button>
         <button class="foot-btn" :class="{ active: ctxOpen }" @click="$emit('toggleCtx')" title="记忆">
           <span class="ico" v-html="Icons.brain()" />
@@ -299,6 +300,19 @@ function deleteSession(name: string) {
 .foot-btn.active {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
+}
+
+.jobs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  flex-shrink: 0;
+  animation: jd-blink 1.4s ease-in-out infinite;
+}
+@keyframes jd-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .3; }
 }
 
 .ico {
