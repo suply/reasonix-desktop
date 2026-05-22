@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { ElMessageBox } from "element-plus"
 import { useAppStore } from "../stores/app"
+import { Icons } from "./icons"
 import { useSessionStore } from "../stores/session"
+
+defineProps<{
+  ctxOpen?: boolean
+}>()
 
 defineEmits<{
   openSettings: []
   openJobs: []
+  toggleCtx: []
 }>()
 
 const appState = useAppStore()
@@ -91,14 +97,20 @@ function deleteSession(name: string) {
     </div>
 
     <div class="side-foot">
-      <button class="foot-row" @click="$emit('openJobs')">
-        <span class="ico">⚙️</span>
-        <span>后台任务</span>
-      </button>
-      <button class="foot-row" @click="$emit('openSettings')">
-        <span class="ico">⚙️</span>
-        <span>设置</span>
-      </button>
+      <div class="foot-row-group">
+        <button class="foot-btn" @click="$emit('openSettings')" title="设置">
+          <span class="ico" v-html="Icons.cog()" />
+          <span class="label">设置</span>
+        </button>
+        <button class="foot-btn" @click="$emit('openJobs')" title="后台任务">
+          <span class="ico" v-html="Icons.terminal()" />
+          <span class="label">后台</span>
+        </button>
+        <button class="foot-btn" :class="{ active: ctxOpen }" @click="$emit('toggleCtx')" title="记忆">
+          <span class="ico" v-html="Icons.brain()" />
+          <span class="label">记忆</span>
+        </button>
+      </div>
     </div>
   </aside>
 </template>
@@ -233,8 +245,13 @@ function deleteSession(name: string) {
   cursor: pointer;
   font-size: 10px;
   color: var(--el-text-color-placeholder);
-  padding: 2px;
-  border-radius: 3px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
   transition: opacity 0.15s;
 }
 
@@ -253,29 +270,42 @@ function deleteSession(name: string) {
   border-top: 1px solid var(--el-border-color-light);
 }
 
-.foot-row {
+.foot-row-group {
+  display: flex;
+  gap: 4px;
+}
+
+.foot-btn {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px 10px;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 4px;
   border: none;
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
-  text-align: left;
+  transition: background .12s, color .12s;
 }
 
-.foot-row:hover {
+.foot-btn:hover {
   background: var(--el-fill-color-light);
   color: var(--el-text-color-primary);
 }
 
+.foot-btn.active {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
 .ico {
-  font-size: 13px;
-  width: 16px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
 }
 </style>

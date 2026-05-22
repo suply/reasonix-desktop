@@ -1,7 +1,11 @@
 // 会话状态 — 移植自 desktop/src/App.tsx 的 reduce / applyIncoming
 import { defineStore } from "pinia"
 import { ref } from "vue"
-import type { IncomingEvent, OutgoingCommand } from "../../../main/protocol"
+import type {
+  IncomingEvent,
+  OutgoingCommand,
+  PlanStep,
+} from "../../../main/protocol"
 
 // ChatMessage 类型定义（来自 desktop/src/App.tsx）
 export type AssistantSegment =
@@ -25,6 +29,68 @@ export interface UsageStats {
   lastCallCacheHit: number | null
   lastCallCacheMiss: number | null
   reservedTokens: number
+}
+
+/** 当前会话中 agent 读取/修改过的文件 */
+export type SessionFile = {
+  path: string
+  /** "c": 拉入上下文 (read_file). "m": 被修改 (edit_file / write_file / multi_edit). */
+  status: "c" | "m"
+}
+
+// ─── 审批工作流类型 ───
+export type PendingConfirm = {
+  id: number
+  kind: "run_command" | "run_background"
+  command: string
+}
+
+export type PendingPathAccess = {
+  id: number
+  path: string
+  intent: "read" | "write"
+  toolName: string
+  sandboxRoot: string
+  allowPrefix: string
+}
+
+export type PendingChoice = {
+  id: number
+  question: string
+  options: { id: string; title: string; summary?: string }[]
+  allowCustom: boolean
+}
+
+export type PendingPlan = {
+  id: number
+  plan: string
+  summary?: string
+  steps?: PlanStep[]
+}
+
+export type ActivePlan = {
+  plan: string
+  summary?: string
+  steps: PlanStep[]
+  completedStepIds: string[]
+  stepResults: Record<string, string>
+}
+
+export type PendingCheckpoint = {
+  id: number
+  stepId: string
+  title?: string
+  result: string
+  notes?: string
+  completed: number
+  total: number
+}
+
+export type PendingRevision = {
+  id: number
+  reason: string
+  remainingSteps: PlanStep[]
+  summary?: string
 }
 
 export const useSessionStore = defineStore("session", () => {
@@ -76,9 +142,197 @@ export const useSessionStore = defineStore("session", () => {
   const mentionResults = ref<{ nonce: number; query: string; results: string[] } | null>(null)
   const mentionPreview = ref<{ nonce: number; path: string; head: string; totalLines: number } | null>(null)
 
+  // ─── 审批工作流状态 ───
+  const pendingConfirms = ref<PendingConfirm[]>([])
+  const pendingPathAccess = ref<PendingPathAccess | null>(null)
+  const pendingChoice = ref<PendingChoice | null>(null)
+  const pendingPlan = ref<PendingPlan | null>(null)
+  const pendingCheckpoint = ref<PendingCheckpoint | null>(null)
+  const pendingRevision = ref<PendingRevision | null>(null)
+  /** 当前正在执行的活动计划（非待审批，已批准后展示进度） */
+  const activePlan = ref<ActivePlan | null>(null)
+
+  /** 当前会话中 agent 读取/修改过的文件列表 */
+  const sessionFiles = ref<SessionFile[]>([])
+
   // ─── 中止当前对话 ───
   function abort() {
+    // 有审批待处理时发送 reject
+    if (pendingPlan.value) {
+      sendCommand({ cmd: "plan_response", id: pendingPlan.value.id, response: { type: "cancel", feedback: "用户中止" } })
+      pendingPlan.value = null
+    }
+    if (pendingCheckpoint.value) {
+      sendCommand({ cmd: "checkpoint_response", id: pendingCheckpoint.value.id, response: { type: "stop" } })
+      pendingCheckpoint.value = null
+    }
+    if (pendingRevision.value) {
+      sendCommand({ cmd: "revision_response", id: pendingRevision.value.id, response: { type: "rejected" } })
+      pendingRevision.value = null
+    }
+    if (pendingChoice.value) {
+      sendCommand({ cmd: "choice_response", id: pendingChoice.value.id, response: { type: "cancel" } })
+      pendingChoice.value = null
+    }
+    if (pendingPathAccess.value) {
+      sendCommand({ cmd: "confirm_response", id: pendingPathAccess.value.id, response: { type: "deny" } })
+      pendingPathAccess.value = null
+    }
+    if (pendingConfirms.value.length > 0) {
+      for (const c of pendingConfirms.value) {
+        sendCommand({ cmd: "confirm_response", id: c.id, response: { type: "deny" } })
+      }
+      pendingConfirms.value = []
+    }
     sendCommand({ cmd: "abort" })
+  }
+
+  // ─── Verdect 发送方法 ───
+  /** 批准 shell 命令执行 */
+  function approveConfirm(id: number) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "run_once" } })
+    pendingConfirms.value = pendingConfirms.value.filter((c) => c.id !== id)
+  }
+  /** 拒绝 shell 命令执行 */
+  function rejectConfirm(id: number) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "deny" } })
+    pendingConfirms.value = pendingConfirms.value.filter((c) => c.id !== id)
+  }
+  /** 始终允许该前缀的 shell 命令 */
+  function alwaysAllowConfirm(id: number, prefix: string) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "always_allow", prefix } })
+    pendingConfirms.value = pendingConfirms.value.filter((c) => c.id !== id)
+  }
+
+  /** 批准路径访问 */
+  function approvePathAccess(id: number) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "run_once" } })
+    pendingPathAccess.value = null
+  }
+  /** 拒绝路径访问 */
+  function rejectPathAccess(id: number) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "deny" } })
+    pendingPathAccess.value = null
+  }
+  /** 始终允许该前缀的路径访问 */
+  function alwaysAllowPathAccess(id: number, prefix: string) {
+    sendCommand({ cmd: "confirm_response", id, response: { type: "always_allow", prefix } })
+    pendingPathAccess.value = null
+  }
+
+  /** 选择一个选项 */
+  function pickChoice(id: number, optionId: string) {
+    sendCommand({ cmd: "choice_response", id, response: { type: "pick", optionId } })
+    pendingChoice.value = null
+  }
+  /** 取消选择 */
+  function cancelChoice(id: number) {
+    sendCommand({ cmd: "choice_response", id, response: { type: "cancel" } })
+    pendingChoice.value = null
+  }
+
+  /** 批准计划 — 批准后转为活动计划 */
+  function approvePlan(id: number, feedback?: string) {
+    const plan = pendingPlan.value
+    if (plan) {
+      activePlan.value = {
+        plan: plan.plan,
+        summary: plan.summary,
+        steps: plan.steps ?? [],
+        completedStepIds: [],
+        stepResults: {},
+      }
+    }
+    sendCommand({ cmd: "plan_response", id, response: { type: "approve", feedback } })
+    pendingPlan.value = null
+  }
+  /** 要求修改计划 */
+  function refinePlan(id: number, feedback?: string) {
+    sendCommand({ cmd: "plan_response", id, response: { type: "refine", feedback } })
+    pendingPlan.value = null
+  }
+  /** 取消计划 */
+  function cancelPlan(id: number, feedback?: string) {
+    sendCommand({ cmd: "plan_response", id, response: { type: "cancel", feedback } })
+    pendingPlan.value = null
+  }
+
+  /** 继续执行（检查点） */
+  function continueCheckpoint(id: number) {
+    sendCommand({ cmd: "checkpoint_response", id, response: { type: "continue" } })
+    pendingCheckpoint.value = null
+  }
+  /** 修改（检查点） */
+  function reviseCheckpoint(id: number, feedback?: string) {
+    sendCommand({ cmd: "checkpoint_response", id, response: { type: "revise", feedback } })
+    pendingCheckpoint.value = null
+  }
+  /** 停止（检查点） */
+  function stopCheckpoint(id: number) {
+    sendCommand({ cmd: "checkpoint_response", id, response: { type: "stop" } })
+    pendingCheckpoint.value = null
+  }
+
+  /** 接受修改方案 */
+  function acceptRevision(id: number) {
+    sendCommand({ cmd: "revision_response", id, response: { type: "accepted" } })
+    pendingRevision.value = null
+  }
+  /** 拒绝修改方案 */
+  function rejectRevision(id: number) {
+    sendCommand({ cmd: "revision_response", id, response: { type: "rejected" } })
+    pendingRevision.value = null
+  }
+
+  // ─── SessionFiles 追踪 ───
+
+  const READING_TOOLS = new Set(["read_file"])
+  const MODIFYING_TOOLS = new Set(["edit_file", "write_file", "multi_edit"])
+
+  function extractToolFiles(name: string, args: string): SessionFile[] {
+    try {
+      const parsed = JSON.parse(args) as { path?: unknown; edits?: unknown }
+      if (READING_TOOLS.has(name) && typeof parsed?.path === "string") {
+        return [{ path: parsed.path, status: "c" }]
+      }
+      if (MODIFYING_TOOLS.has(name)) {
+        // multi_edit 可能在 edits 数组中有多个 path
+        if (name === "multi_edit" && Array.isArray(parsed?.edits)) {
+          return parsed.edits
+            .filter((e: Record<string, unknown>) => typeof e.path === "string")
+            .map((e: Record<string, unknown>) => ({ path: e.path as string, status: "m" as const }))
+        }
+        if (typeof parsed?.path === "string") {
+          return [{ path: parsed.path, status: "m" }]
+        }
+      }
+    } catch {
+      // args 不是有效 JSON，跳过
+    }
+    return []
+  }
+
+  function mergeSessionFiles(existing: SessionFile[], adds: SessionFile[]): SessionFile[] {
+    if (adds.length === 0) return existing
+    const next = [...existing]
+    const indexByPath = new Map<string, number>()
+    next.forEach((f, i) => indexByPath.set(f.path, i))
+    let changed = false
+    for (const add of adds) {
+      const idx = indexByPath.get(add.path)
+      if (idx !== undefined) {
+        // 已存在：如果新增是 "m" (修改)，升级状态
+        if (add.status === "m" && next[idx]!.status === "c") {
+          next[idx] = { ...next[idx]!, status: "m" }
+          changed = true
+        }
+      } else {
+        next.push(add)
+        indexByPath.set(add.path, next.length - 1)
+        changed = true
+      }
+    }
+    return changed ? next : existing
   }
 
   // ─── 发送命令到主进程 ───
@@ -126,90 +380,98 @@ export const useSessionStore = defineStore("session", () => {
         break
 
       case "model.delta":
-        // 追加到当前消息的最后一段
-        const deltaMsg = messages.value[messages.value.length - 1]
-        if (deltaMsg?.kind === "assistant" && deltaMsg.pending) {
-          // channel → kind 映射: content → text, reasoning → reasoning, tool_args → tool_args
-          const segKind = event.channel === "content" ? "text" : event.channel as "reasoning" | "tool_args"
-          const lastSeg = deltaMsg.segments[deltaMsg.segments.length - 1]
-          if (lastSeg?.kind === segKind && lastSeg.kind !== "tool_args") {
-            // 同类型连续追加
-            ;(lastSeg as any).text += event.text
-          } else {
-            // 新段
-            const base = { kind: segKind, text: event.text } as any
-            if (event.channel === "tool_args") {
-              base.callId = ""
-              base.name = ""
-              base.args = ""
-            }
-            deltaMsg.segments.push(base)
-          }
+        // 按 turn 匹配（同源码），仅处理 content / reasoning
+        if (event.channel !== "content" && event.channel !== "reasoning") break
+        const dIdx = messages.value.findIndex(
+          (m) => m.kind === "assistant" && m.turn === event.turn
+        )
+        if (dIdx < 0) break
+        const dMsg = messages.value[dIdx]
+        if (dMsg.kind !== "assistant") break
+        const dKind = event.channel === "content" ? "text" : "reasoning"
+        const dLast = dMsg.segments[dMsg.segments.length - 1]
+        if (dLast?.kind === dKind) {
+          ;(dLast as any).text += event.text
+        } else {
+          dMsg.segments.push({ kind: dKind, text: event.text })
         }
         break
 
       case "model.final":
-        // 调试日志
-        console.log("[event] model.final", { contentLen: event.content?.length, hasReasoning: !!event.reasoningContent, turn: event.turn })
-        // 标记完成，用 model.final 的完整内容替换/添加 text 段
-        const finalMsg = messages.value[messages.value.length - 1]
-        if (finalMsg?.kind === "assistant") {
-          finalMsg.pending = false
-          // 始终用 model.final.content 设置 text 段（替换可能不完整的 delta 流式内容）
-          if (event.content) {
-            const textIdx = finalMsg.segments.findIndex((s) => s.kind === "text")
-            if (textIdx >= 0) {
-              finalMsg.segments[textIdx] = { kind: "text", text: event.content }
-            } else {
-              finalMsg.segments.push({ kind: "text", text: event.content })
-            }
+        // 按 turn 匹配（同源码），用完整内容替换流式 delta 可能不完整的片段
+        const fIdx = messages.value.findIndex(
+          (m) => m.kind === "assistant" && m.turn === event.turn
+        )
+        if (fIdx < 0) break
+        const fMsg = messages.value[fIdx]
+        if (fMsg.kind !== "assistant") break
+        fMsg.pending = false
+        if (event.content) {
+          const textIdx = fMsg.segments.findIndex((s) => s.kind === "text")
+          if (textIdx >= 0) {
+            fMsg.segments[textIdx] = { kind: "text", text: event.content }
+          } else {
+            fMsg.segments.push({ kind: "text", text: event.content })
           }
-          // 同样处理 reasoningContent
-          if (event.reasoningContent) {
-            const reasonIdx = finalMsg.segments.findIndex((s) => s.kind === "reasoning")
-            if (reasonIdx >= 0) {
-              finalMsg.segments[reasonIdx] = { kind: "reasoning", text: event.reasoningContent }
-            } else {
-              finalMsg.segments.push({ kind: "reasoning", text: event.reasoningContent })
-            }
+        }
+        if (event.reasoningContent) {
+          const reasonIdx = fMsg.segments.findIndex((s) => s.kind === "reasoning")
+          if (reasonIdx >= 0) {
+            fMsg.segments[reasonIdx] = { kind: "reasoning", text: event.reasoningContent }
+          } else {
+            fMsg.segments.push({ kind: "reasoning", text: event.reasoningContent })
           }
         }
         break
 
       case "tool.preparing":
-        // 在最后一条 assistant 消息中添加 tool 占位
-        const prepMsg = messages.value[messages.value.length - 1]
-        if (prepMsg?.kind === "assistant" && prepMsg.pending) {
-          prepMsg.segments.push({
-            kind: "tool",
-            callId: event.callId,
-            name: event.name,
-            args: "",
-            startedAt: Date.now(),
-          })
-        }
+        const pIdx2 = messages.value.findIndex(
+          (m) => m.kind === "assistant" && m.turn === event.turn
+        )
+        if (pIdx2 < 0) break
+        const pMsg = messages.value[pIdx2]
+        if (pMsg.kind !== "assistant") break
+        if (pMsg.segments.some((s) => s.kind === "tool" && s.callId === event.callId)) break
+        pMsg.segments.push({
+          kind: "tool",
+          callId: event.callId,
+          name: event.name,
+          args: "",
+          startedAt: Date.now(),
+        })
         break
 
       case "tool.intent":
-        // 更新 tool 参数
-        const intentMsg = messages.value[messages.value.length - 1]
-        if (intentMsg?.kind === "assistant") {
-          const seg = intentMsg.segments.find(
-            (s) => s.kind === "tool" && s.callId === event.callId,
-          )
-          if (seg && seg.kind === "tool") {
-            seg.args = event.args
+        // 更新 tool 参数 + 追踪 session 文件
+        const iIdx = messages.value.findIndex(
+          (m) => m.kind === "assistant" && m.turn === event.turn
+        )
+        if (iIdx >= 0) {
+          const iMsg = messages.value[iIdx]
+          if (iMsg.kind === "assistant") {
+            const seg = iMsg.segments.find(
+              (s) => s.kind === "tool" && s.callId === event.callId,
+            )
+            if (seg?.kind === "tool") {
+              seg.args = event.args
+            }
           }
         }
+        // 跟踪读取/修改的文件
+        sessionFiles.value = mergeSessionFiles(
+          sessionFiles.value,
+          extractToolFiles(event.name, event.args),
+        )
         break
 
       case "tool.result":
-        const resultMsg = messages.value[messages.value.length - 1]
-        if (resultMsg?.kind === "assistant") {
-          const seg = resultMsg.segments.find(
+        // 遍历所有 assistant 消息匹配 callId（同源码：不限定 turn）
+        for (const rMsg of messages.value) {
+          if (rMsg.kind !== "assistant") continue
+          const seg = rMsg.segments.find(
             (s) => s.kind === "tool" && s.callId === event.callId,
           )
-          if (seg && seg.kind === "tool") {
+          if (seg?.kind === "tool") {
             seg.result = event.output
             seg.ok = event.ok
             if (seg.startedAt) {
@@ -222,7 +484,30 @@ export const useSessionStore = defineStore("session", () => {
       case "$session_loaded":
         busy.value = false
         currentSession.value = event.name
+        clearApprovals()
         messages.value = []
+        // 从加载的消息中重建 sessionFiles
+        const loadedFiles: SessionFile[] = []
+        for (const m of event.messages) {
+          if (m.kind === "assistant") {
+            for (const s of m.segments) {
+              if (s.kind === "tool") {
+                const adds = extractToolFiles(s.name, s.args)
+                for (const a of adds) loadedFiles.push(a)
+              }
+            }
+          }
+        }
+        sessionFiles.value = loadedFiles.reduce(
+          (acc, f) => mergeSessionFiles(acc, [f]),
+          [] as SessionFile[],
+        )
+        // 恢复用量
+        if (event.carryover) {
+          usageStats.value.totalCostUsd = event.carryover.totalCostUsd
+          usageStats.value.cacheHitTokens = event.carryover.cacheHitTokens
+          usageStats.value.cacheMissTokens = event.carryover.cacheMissTokens
+        }
         for (const m of event.messages) {
           if (m.kind === "user") {
             messages.value.push({ kind: "user", text: m.text, clientId: "loaded", turn: 0 })
@@ -245,8 +530,95 @@ export const useSessionStore = defineStore("session", () => {
         mentionPreview.value = { nonce: event.nonce, path: event.path, head: event.head, totalLines: event.totalLines }
         break
 
+      // ═══ 审批工作流事件 ═══
+
+      case "$confirm_required":
+        pendingConfirms.value.push({
+          id: event.id,
+          kind: event.kind,
+          command: event.command,
+        })
+        break
+
+      case "$path_access_required":
+        pendingPathAccess.value = {
+          id: event.id,
+          path: event.path,
+          intent: event.intent,
+          toolName: event.toolName,
+          sandboxRoot: event.sandboxRoot,
+          allowPrefix: event.allowPrefix,
+        }
+        break
+
+      case "$choice_required":
+        pendingChoice.value = {
+          id: event.id,
+          question: event.question,
+          options: event.options,
+          allowCustom: event.allowCustom,
+        }
+        break
+
+      case "$plan_required":
+        pendingPlan.value = {
+          id: event.id,
+          plan: event.plan,
+          summary: event.summary,
+          steps: (event.steps ?? []) as PlanStep[],
+        }
+        // 同时将 busy 置为 false 以允许用户在输入框操作
+        busy.value = false
+        break
+
+      case "$checkpoint_required":
+        pendingCheckpoint.value = {
+          id: event.id,
+          stepId: event.stepId,
+          title: event.title,
+          result: event.result,
+          notes: event.notes,
+          completed: event.completed,
+          total: event.total,
+        }
+        break
+
+      case "$revision_required":
+        pendingRevision.value = {
+          id: event.id,
+          reason: event.reason,
+          remainingSteps: event.remainingSteps,
+          summary: event.summary,
+        }
+        break
+
+      case "$step_completed": {
+        // 更新活动计划的步骤完成状态
+        const plan = activePlan.value
+        if (plan) {
+          if (!plan.completedStepIds.includes(event.stepId)) {
+            plan.completedStepIds.push(event.stepId)
+          }
+          if (event.result) {
+            plan.stepResults[event.stepId] = event.result
+          }
+        }
+        break
+      }
+
+      case "$plan_cleared":
+        activePlan.value = null
+        break
+
+      case "$ctx_breakdown":
+        usageStats.value.reservedTokens = event.reservedTokens
+        if (event.logTokens !== undefined) {
+          // logTokens 更新时同时也反向推算 cacheHit/Miss — 简化处理
+        }
+        break
+
       case "status":
-        messages.value.push({ kind: "status", text: event.text })
+        // 原版忽略所有 status 事件，不展示
         break
 
       case "error":
@@ -283,9 +655,21 @@ export const useSessionStore = defineStore("session", () => {
   function clearMessages() {
     messages.value = []
     currentSession.value = ""
+    clearApprovals()
+  }
+
+  /** 清除所有审批状态 */
+  function clearApprovals() {
+    pendingConfirms.value = []
+    pendingPathAccess.value = null
+    pendingChoice.value = null
+    pendingPlan.value = null
+    pendingCheckpoint.value = null
+    pendingRevision.value = null
   }
 
   return {
+    // 消息
     messages,
     currentSession,
     activeTabId,
@@ -295,6 +679,17 @@ export const useSessionStore = defineStore("session", () => {
     queuedSends,
     mentionResults,
     mentionPreview,
+    // 审批工作流
+    pendingConfirms,
+    pendingPathAccess,
+    pendingChoice,
+    pendingPlan,
+    pendingCheckpoint,
+    pendingRevision,
+    activePlan,
+    // 会话文件
+    sessionFiles,
+    // 生命周期
     spawnRpc,
     resetRpc,
     sendCommand,
@@ -304,5 +699,23 @@ export const useSessionStore = defineStore("session", () => {
     addUserMessage,
     queueSend,
     dequeueSend,
+    clearApprovals,
+    // 审批 verdict
+    approveConfirm,
+    rejectConfirm,
+    alwaysAllowConfirm,
+    approvePathAccess,
+    rejectPathAccess,
+    alwaysAllowPathAccess,
+    pickChoice,
+    cancelChoice,
+    approvePlan,
+    refinePlan,
+    cancelPlan,
+    continueCheckpoint,
+    reviseCheckpoint,
+    stopCheckpoint,
+    acceptRevision,
+    rejectRevision,
   }
 })

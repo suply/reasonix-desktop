@@ -2,9 +2,16 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue"
 import { useSessionStore } from "../stores/session"
 import { useSettingsStore } from "../stores/settings"
+import type { EditMode } from "../stores/settings"
+import ModeSwitch from "./ModeSwitch.vue"
 
 const session = useSessionStore()
 const settings = useSettingsStore()
+
+function setEditMode(mode: EditMode) {
+  settings.settings.editMode = mode
+  session.sendCommand({ cmd: "settings_save", editMode: mode } as any)
+}
 
 // ─── 文本输入 ───
 const inputText = ref("")
@@ -29,17 +36,6 @@ const elapsedText = computed(() => {
   return m > 0 ? `${m}m${s}s` : `${s}s`
 })
 
-// ─── 编辑模式切换（源码 ModeSwitch）───
-type EditMode = "review" | "auto" | "yolo"
-const MODES: { k: EditMode; label: string }[] = [
-  { k: "review", label: "审查" },
-  { k: "auto", label: "自动" },
-  { k: "yolo", label: "信任" },
-]
-function setEditMode(mode: EditMode) {
-  session.sendCommand({ cmd: "settings_save", editMode: mode } as any)
-}
-
 // ─── 模型预设（源码 model-pill + ModelMenu）───
 type PresetName = "auto" | "flash" | "pro"
 const PRESETS: { k: PresetName; label: string; badge: string; desc: string }[] = [
@@ -62,13 +58,11 @@ function sendMessage() {
   if (session.busy) {
     session.queueSend(text)
     inputText.value = ""
-    resizeTextarea()
     return
   }
   session.addUserMessage(text)
   session.sendCommand({ cmd: "user_input", text })
   inputText.value = ""
-  resizeTextarea()
   closePopup()
 }
 
@@ -85,13 +79,6 @@ function flushQueue() {
   }
 }
 
-// ─── textarea 自适应 ───
-function resizeTextarea() {
-  const el = textareaRef.value
-  if (!el) return
-  el.style.height = "auto"
-  el.style.height = Math.min(el.scrollHeight, 220) + "px"
-}
 // ─── ═══════════════════════════════════════
 // 弹出菜单 (slash / at) — 对照源码 Popup
 // ═══════════════════════════════════════════
@@ -115,7 +102,7 @@ const slashCommands: SlashCmd[] = [
   { cmd: "/new", desc: "新建会话", run: () => { session.sendCommand({ cmd: "new_chat" }); session.clearMessages() }, kb: "⌘N" },
   { cmd: "/clear", desc: "清屏", run: () => session.clearMessages() },
   { cmd: "/abort", desc: "中止输出", run: () => abortTurn(), kb: "ESC" },
-  { cmd: "/model", desc: "切换模型", run: () => {} },
+  { cmd: "/model", desc: "切换模型", run: () => { } },
   { cmd: "/retry", desc: "重试", run: () => session.sendCommand({ cmd: "retry" }) },
   { cmd: "/compact", desc: "压缩历史", run: () => session.sendCommand({ cmd: "compact_history" }) },
 ]
@@ -154,7 +141,6 @@ function handleChange(e: Event) {
   const el = e.target as HTMLTextAreaElement
   const v = el.value
   inputText.value = v
-  resizeTextarea()
   closePopup()
   const trail = v.match(/(^|\s)([/@])([^\s]*)$/)
   if (trail) {
@@ -332,7 +318,7 @@ function onFocus() {
       <button class="queue-flush-btn" @click="flushQueue">发送</button>
     </div>
 
-    <!-- hint 行（源码 hint-row） -->
+    <!-- hint 行 — 忙碌/空闲都显示 ModeSwitch -->
     <div class="hint-row">
       <template v-if="session.busy">
         <span class="composer-busy-status">
@@ -340,45 +326,42 @@ function onFocus() {
           <span class="composer-busy-label">Reasoning</span>
           <span class="composer-busy-time">{{ elapsedText }}</span>
         </span>
-        <span class="grow" />
-        <span class="hint-text"><kbd>↵</kbd> 排队 · <kbd>ESC</kbd> 中止</span>
       </template>
-      <template v-else>
-        <span class="hint-text">
-          <kbd>/</kbd> 命令 · <kbd>@</kbd> 文件 · <kbd>⌘K</kbd> 面板
-        </span>
-        <span class="grow" />
-        <div class="mode-switch">
-          <button v-for="m in MODES" :key="m.k" type="button" class="ms-seg"
-            :data-on="settings.settings.editMode === m.k" :data-k="m.k" @click="setEditMode(m.k)">
-            <span>{{ m.label }}</span>
-          </button>
-        </div>
-        <span class="hint-sep" />
-        <span class="hint-text"><kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行</span>
-      </template>
+      <span class="grow" />
+      <ModeSwitch :mode="settings.settings.editMode" @change="setEditMode" />
     </div>
 
     <!-- 输入卡片（源码 composer） -->
     <div class="composer" :class="{ 'is-busy': session.busy }">
-      <textarea ref="textareaRef" :value="inputText" placeholder="输入消息..."
+      <textarea ref="textareaRef" :value="inputText" placeholder="向 Agent 提问 / 安排任务, Enter 发送 , Shift + Enter换行"
         :disabled="!session.rpcReady" rows="2" @keydown="onKeydown" @input="handleChange" @focus="onFocus" />
 
       <!-- 底部栏（源码 composer-foot） -->
       <div class="composer-foot">
         <!-- 文件/图片/命令/提及 按钮（源码 cf-btn） -->
         <button type="button" class="cf-btn" title="插入文件" @click="attachFile()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
         </button>
         <button type="button" class="cf-btn" title="插入图片" @click="attachFile('image')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
         </button>
-        <button type="button" class="cf-btn" title="命令" @click="() => { popup = 'slash'; popupQuery = ''; activeIdx = 0 }">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 11l-2 2m0 0l-2-2m2 2V7m0 11a7 7 0 1 0 0-14 7 7 0 0 0 0 14z"/></svg>
+        <button type="button" class="cf-btn" title="命令"
+          @click="() => { popup = 'slash'; popupQuery = ''; activeIdx = 0 }">
+          <span class="cf-slash">/</span>
           <span class="cf-label">命令</span>
         </button>
         <button type="button" class="cf-btn" title="提及文件" @click="openAtMention()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+          </svg>
           <span class="cf-label">提及</span>
         </button>
 
@@ -387,20 +370,27 @@ function onFocus() {
         <!-- 模型预设（源码 model-pill） -->
         <div class="preset-wrap">
           <button type="button" class="model-pill" @click="presetMenuOpen = !presetMenuOpen" title="切换预设">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10V2z"/><path d="M21.5 12H12V2.5"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a10 10 0 1 0 10 10h-10V2z" />
+              <path d="M21.5 12H12V2.5" />
+            </svg>
             <span>{{ settings.settings.model || 'deepseek-chat' }}</span>
             <span class="badge">{{ currentPresetInfo?.badge }}</span>
-            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="10" height="10" viewBox="0 0 10 10">
+              <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" />
+            </svg>
           </button>
           <Transition name="fade">
             <div v-if="presetMenuOpen" class="popup preset-popup">
               <div class="ph"><span class="tok">M</span><span>切换预设</span></div>
               <div class="popup-list" @mouseleave="presetMenuOpen = false">
                 <button v-for="p in PRESETS" :key="p.k" type="button" class="popup-item"
-                  :data-active="settings.settings.preset === p.k"
-                  @click="setPreset(p.k); presetMenuOpen = false">
+                  :data-active="settings.settings.preset === p.k" @click="setPreset(p.k); presetMenuOpen = false">
                   <span class="ico">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10V2z"/><path d="M21.5 12H12V2.5"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2a10 10 0 1 0 10 10h-10V2z" />
+                      <path d="M21.5 12H12V2.5" />
+                    </svg>
                   </span>
                   <div class="nm">
                     <span class="cmd">{{ p.label }}</span>
@@ -415,10 +405,15 @@ function onFocus() {
 
         <!-- 发送/中止 -->
         <button v-if="session.busy" type="button" class="send-btn stop-btn" @click="abortTurn" title="中止">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
         </button>
         <button v-else type="button" class="send-btn" :disabled="!canSend" @click="sendMessage" title="发送">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 2L11 13" />
+            <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+          </svg>
         </button>
       </div>
 
@@ -433,24 +428,41 @@ function onFocus() {
           </div>
           <div class="popup-list" ref="popupListRef">
             <div v-if="items.length === 0" class="popup-empty">无匹配结果</div>
-            <div v-for="(it, i) in items" :key="i" class="popup-item"
-              :data-active="i === activeIdx" @click="pickItem(i)" @mouseenter="hoverItem(i)">
+            <div v-for="(it, i) in items" :key="i" class="popup-item" :data-active="i === activeIdx"
+              @click="pickItem(i)" @mouseenter="hoverItem(i)">
               <span class="ico">
                 <!-- slash 图标 -->
                 <template v-if="popup === 'slash'">
-                  <svg v-if="(it as SlashCmd).cmd === '/new'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                  <svg v-else-if="(it as SlashCmd).cmd === '/clear'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-.93 14.28A2 2 0 0 1 16.07 22H7.93a2 2 0 0 1-2-1.86L5 6"/></svg>
-                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 11l-2 2m0 0l-2-2m2 2V7m0 11a7 7 0 1 0 0-14 7 7 0 0 0 0 14z"/></svg>
+                  <svg v-if="(it as SlashCmd).cmd === '/new'" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  <svg v-else-if="(it as SlashCmd).cmd === '/clear'" width="12" height="12" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                    <path d="M19 6l-.93 14.28A2 2 0 0 1 16.07 22H7.93a2 2 0 0 1-2-1.86L5 6" />
+                  </svg>
+                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <path d="M14 11l-2 2m0 0l-2-2m2 2V7m0 11a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" />
+                  </svg>
                 </template>
                 <!-- at 图标 -->
                 <template v-else>
-                  <svg v-if="(it as MentionItem).kind === 'dir'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                  <svg v-if="(it as MentionItem).kind === 'dir'" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
                 </template>
               </span>
               <div class="nm">
                 <template v-if="popup === 'slash'">
-                  <span class="cmd">${(it as SlashCmd).cmd}</span>
+                  <span class="cmd">{{ (it as SlashCmd).cmd }}</span>
                   <span class="desc">{{ (it as SlashCmd).desc }}</span>
                 </template>
                 <template v-else>
@@ -481,6 +493,7 @@ function onFocus() {
   border-top: 1px solid var(--el-border-color-light);
   position: relative;
 }
+
 .composer-wrap::before {
   content: "";
   position: absolute;
@@ -492,55 +505,150 @@ function onFocus() {
 
 /* ─── 排队 chip ─── */
 .composer-queued {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  padding: 4px 6px 6px; font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 6px 6px;
+  font-size: 14px;
 }
+
 .composer-queued-label {
-  color: var(--el-text-color-placeholder); font-variant-numeric: tabular-nums;
-  flex-shrink: 0; font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-size: 12px;
 }
+
 .composer-queue-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  max-width: 240px; padding: 2px 4px 2px 8px;
-  border: 1px dashed var(--el-border-color); border-radius: 999px;
-  background: var(--el-fill-color-light); font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 2px 4px 2px 8px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 999px;
+  background: var(--el-fill-color-light);
+  font-size: 12px;
 }
-.composer-queue-chip .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.composer-queue-chip .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .composer-queue-chip .x {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  cursor: pointer;
   color: var(--el-text-color-placeholder);
 }
-.composer-queue-chip .x:hover { background: var(--el-border-color); color: var(--el-text-color-primary); }
-.queue-flush-btn {
-  padding: 2px 10px; border-radius: 6px;
-  border: 1px solid var(--el-color-primary); background: transparent;
-  color: var(--el-color-primary); font-size: 12px; cursor: pointer;
+
+.composer-queue-chip .x:hover {
+  background: var(--el-border-color);
+  color: var(--el-text-color-primary);
 }
-.queue-flush-btn:hover { background: var(--el-color-primary-light-9); }
+
+.queue-flush-btn {
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--el-color-primary);
+  background: transparent;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.queue-flush-btn:hover {
+  background: var(--el-color-primary-light-9);
+}
 
 /* ─── hint 行 ─── */
 .hint-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 0 6px; font-size: 12px; color: var(--el-text-color-placeholder);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 6px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
 }
-.hint-row .grow { flex: 1; }
-.hint-row .hint-sep { width: 1px; height: 12px; background: var(--el-border-color); flex-shrink: 0; }
+
+.hint-row .grow {
+  flex: 1;
+}
+
+.hint-row .hint-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--el-border-color);
+  flex-shrink: 0;
+}
+
 .hint-row kbd {
-  background: var(--el-fill-color-light); border: 1px solid var(--el-border-color);
-  border-radius: 3px; padding: 0 4px; font-size: 11px; font-family: inherit;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-family: inherit;
 }
-.hint-text { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+
+.hint-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+}
 
 /* ─── 忙碌状态 ─── */
-.composer-busy-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.composer-busy-pip {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-primary);
-  animation: blink 1.2s ease-in-out infinite; flex-shrink: 0;
+.composer-busy-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-.composer-busy-label { color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.composer-busy-time { color: var(--el-text-color-placeholder); font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 12px; }
+
+.composer-busy-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  animation: blink 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1
+  }
+
+  50% {
+    opacity: .3
+  }
+}
+
+.composer-busy-label {
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.composer-busy-time {
+  color: var(--el-text-color-placeholder);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-size: 12px;
+}
 
 /* ─── 输入卡片 ─── */
 .composer {
@@ -551,126 +659,307 @@ function onFocus() {
   position: relative;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.composer:focus-within { border-color: var(--el-color-primary); }
-.composer.is-busy { opacity: 0.8; }
+
+.composer:focus-within {
+  border-color: var(--el-color-primary);
+}
+
+.composer.is-busy {
+  opacity: 0.8;
+}
 
 .composer textarea {
-  display: block; width: 100%; resize: none; background: none; border: none;
-  outline: none; padding: 12px 14px 6px; font-size: 14px; line-height: 1.55;
-  min-height: 24px; max-height: 220px; font-family: inherit;
+  display: block;
+  width: 100%;
+  height: 100px;
+  resize: none;
+  overflow-y: auto;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 12px 14px 6px;
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: inherit;
   color: var(--el-text-color-primary);
+  scrollbar-width: thin;
 }
-.composer textarea::placeholder { color: var(--el-text-color-placeholder); }
-.composer textarea:disabled { cursor: not-allowed; }
+.composer textarea::-webkit-scrollbar {
+  width: 5px;
+}
+.composer textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+.composer textarea::-webkit-scrollbar-thumb {
+  background: var(--el-border-color);
+  border-radius: 3px;
+}
+
+.composer textarea::placeholder {
+  color: var(--el-text-color-placeholder);
+}
+
+.composer textarea:disabled {
+  cursor: not-allowed;
+}
 
 /* ─── 底部操作栏 ─── */
-.composer-foot { display: flex; align-items: center; gap: 4px; padding: 6px 8px 8px; }
-.composer-foot .grow { flex: 1; }
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+
+.composer-foot .grow {
+  flex: 1;
+}
+
 .cf-btn {
-  padding: 5px 8px; border-radius: 6px; font-size: 13px;
-  color: var(--el-text-color-placeholder); display: inline-flex; align-items: center;
-  gap: 5px; border: none; background: transparent; cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-placeholder);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
-.cf-btn:hover { background: var(--el-fill-color); color: var(--el-text-color-primary); }
-.cf-btn .cf-label { font-family: inherit; font-size: 12px; }
+
+.cf-btn:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+
+.cf-slash {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+.cf-btn .cf-label {
+  font-family: inherit;
+  font-size: 12px;
+}
 
 /* ─── 模型预设按钮 ─── */
-.preset-wrap { position: relative; }
+.preset-wrap {
+  position: relative;
+}
+
 .model-pill {
-  padding: 4px 8px; border-radius: 6px; font-size: 13px;
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--el-fill-color); border: 1px solid var(--el-border-color);
-  color: var(--el-text-color-secondary); font-family: inherit; cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-secondary);
+  font-family: inherit;
+  cursor: pointer;
   transition: background 0.12s;
 }
-.model-pill:hover { background: var(--el-fill-color-light); }
+
+.model-pill:hover {
+  background: var(--el-fill-color-light);
+}
+
 .model-pill .badge {
-  font-size: 11px; background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary); padding: 1px 5px; border-radius: 3px; font-weight: 600;
+  font-size: 11px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
 }
 
 /* ─── 预设弹出菜单 ─── */
-.preset-popup { position: absolute; bottom: calc(100% + 8px); right: 0; width: 280px; z-index: 100; }
+.preset-popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  z-index: 100;
+}
 
 /* ─── Popup 通用 ─── */
 .popup {
-  background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color);
-  border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,.2);
-  overflow: hidden; display: flex; flex-direction: column;
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+
 .popup-menu {
-  position: absolute; bottom: calc(100% + 8px); left: 0; width: 420px;
-  max-height: 320px; z-index: 100;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 420px;
+  max-height: 320px;
+  z-index: 100;
 }
+
 .popup .ph {
-  padding: 8px 12px; font-size: 12px; color: var(--el-text-color-placeholder);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
   border-bottom: 1px solid var(--el-border-color-light);
-  display: flex; align-items: center; gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
+.popup .ph .grow {
+  flex: 1;
+}
+
 .popup .ph .tok {
-  color: var(--el-color-primary); background: var(--el-color-primary-light-9);
-  padding: 1px 6px; border-radius: 4px; font-weight: 600; font-size: 11px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
 }
-.popup-close { cursor: pointer; font-size: 12px; opacity: .5; }
-.popup-close:hover { opacity: 1; }
-.popup-list { max-height: 260px; overflow-y: auto; }
+
+.popup-close {
+  cursor: pointer;
+  font-size: 12px;
+  opacity: .5;
+}
+
+.popup-close:hover {
+  opacity: 1;
+}
+
+.popup-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .popup-empty {
-  padding: 12px 8px; font-size: 12px; color: var(--el-text-color-placeholder);
-  font-family: ui-monospace, monospace; text-align: center;
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  font-family: ui-monospace, monospace;
+  text-align: center;
 }
+
 .popup-item {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 8px 12px; border: none; background: transparent;
-  cursor: pointer; text-align: left; font-family: inherit; font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
   transition: background 0.1s;
 }
+
 .popup-item:hover,
-.popup-item[data-active="true"] { background: var(--el-color-primary-light-9); }
-.popup-item .ico { display: inline-flex; color: var(--el-text-color-placeholder); flex-shrink: 0; }
-.popup-item .nm { flex: 1; min-width: 0; }
-.popup-item .cmd { display: block; font-weight: 500; font-size: 13px; }
-.popup-item .desc { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.popup-item .kb {
-  font-size: 10px; padding: 1px 5px; border-radius: 3px;
-  background: var(--el-fill-color-light); color: var(--el-text-color-placeholder);
-  font-weight: 600; flex-shrink: 0;
+.popup-item[data-active="true"] {
+  background: var(--el-color-primary-light-9);
 }
+
+.popup-item .ico {
+  display: inline-flex;
+  color: var(--el-text-color-placeholder);
+  flex-shrink: 0;
+}
+
+.popup-item .nm {
+  flex: 1;
+  min-width: 0;
+}
+
+.popup-item .cmd {
+  display: block;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.popup-item .desc {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-item .kb {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-placeholder);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .popup-foot {
-  display: flex; gap: 12px; padding: 6px 12px;
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
   border-top: 1px solid var(--el-border-color-light);
-  font-size: 11px; color: var(--el-text-color-placeholder);
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
 
 /* ─── 编辑模式切换 ─── */
-.mode-switch {
-  display: inline-flex; padding: 2px; border-radius: 8px;
-  background: var(--el-fill-color); border: 1px solid var(--el-border-color); gap: 1px; flex-shrink: 0;
-}
-.ms-seg {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
-  border-radius: 6px; font-size: 12px; border: none; background: transparent;
-  color: var(--el-text-color-placeholder); cursor: pointer;
-  transition: background .12s,color .12s; font-family: inherit;
-}
-.ms-seg:hover { color: var(--el-text-color-primary); }
-.ms-seg[data-on="true"][data-k="review"] { background: var(--el-color-info-light-9); color: var(--el-color-info); }
-.ms-seg[data-on="true"][data-k="auto"] { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
-.ms-seg[data-on="true"][data-k="yolo"] { background: var(--el-color-danger); color: #fff; }
-
 /* ─── 发送/中止 ─── */
 .send-btn {
-  width: 30px; height: 30px; border-radius: 8px; border: none;
-  background: var(--el-color-primary); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background .12s; flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: var(--el-color-primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .12s;
+  flex-shrink: 0;
 }
-.send-btn:hover { background: var(--el-color-primary-light-3); }
-.send-btn:disabled { background: var(--el-fill-color); color: var(--el-text-color-placeholder); cursor: not-allowed; }
-.send-btn.stop-btn { background: var(--el-color-danger); }
-.send-btn.stop-btn:hover { background: var(--el-color-danger-light-3); }
+
+.send-btn:hover {
+  background: var(--el-color-primary-light-3);
+}
+
+.send-btn:disabled {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-placeholder);
+  cursor: not-allowed;
+}
+
+.send-btn.stop-btn {
+  background: var(--el-color-danger);
+}
+
+.send-btn.stop-btn:hover {
+  background: var(--el-color-danger-light-3);
+}
 
 /* ─── 过渡 ─── */
-.fade-enter-active, .fade-leave-active { transition: opacity .12s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity .12s;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 </style>

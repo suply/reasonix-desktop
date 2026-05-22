@@ -1,7 +1,7 @@
 // 全局应用状态
 import { defineStore } from "pinia"
 import { ref } from "vue"
-import type { IncomingEvent, JobInfo, McpSpecInfo, SkillInfo } from "../../../main/protocol"
+import type { IncomingEvent, JobInfo, McpSpecInfo, SkillInfo, MemoryEntryInfo } from "../../../main/protocol"
 
 export interface SessionInfo {
   name: string
@@ -15,7 +15,9 @@ export const useAppStore = defineStore("app", () => {
   const sessions = ref<SessionInfo[]>([])
   const jobs = ref<JobInfo[]>([])
   const mcpSpecs = ref<McpSpecInfo[]>([])
+  const mcpBridged = ref(false)
   const skills = ref<SkillInfo[]>([])
+  const memory = ref<MemoryEntryInfo[]>([])
 
   function handleEvent(event: IncomingEvent) {
     switch (event.type) {
@@ -30,12 +32,16 @@ export const useAppStore = defineStore("app", () => {
         break
       case "$mcp_specs":
         mcpSpecs.value = event.specs
+        mcpBridged.value = "bridged" in event ? (event as any).bridged : false
         break
       case "$skills":
         skills.value = event.items
         break
+      case "$memory":
+        memory.value = event.entries
+        break
     }
   }
 
-  return { version, sessions, jobs, mcpSpecs, skills, handleEvent }
+  return { version, sessions, jobs, mcpSpecs, mcpBridged, skills, memory, handleEvent }
 })

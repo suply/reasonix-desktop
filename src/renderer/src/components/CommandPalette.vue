@@ -8,7 +8,6 @@ export interface CommandItem {
   id: string
   label: string
   hint?: string
-  icon: string  // emoji 作为简易图标
   shortcut?: string[]
   group: CommandGroup
   run: () => void
@@ -30,8 +29,8 @@ const listRef = ref<HTMLDivElement | null>(null)
 
 const GROUP_LABELS: Record<CommandGroup, string> = {
   nav: "导航",
-  action: "操作",
-  workspace: "工作区",
+  action: "动作",
+  workspace: "目录",
   settings: "设置",
 }
 
@@ -111,11 +110,13 @@ function shortcutText(keys: string[]): string {
       <div class="cmdk">
         <!-- 搜索栏 -->
         <div class="cmdk-head">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
           <input
             ref="inputRef"
             v-model="query"
-            placeholder="搜索命令..."
+            placeholder="搜索命令…"
             @keydown="onKeydown"
           />
           <span class="hint-key">ESC</span>
@@ -124,7 +125,7 @@ function shortcutText(keys: string[]): string {
         <!-- 命令列表 -->
         <div class="cmdk-body" ref="listRef">
           <div v-if="filtered.length === 0" class="cmdk-empty">
-            没有匹配的命令
+            没匹配到
           </div>
 
           <div v-for="section in grouped" :key="section.group" class="cmdk-group">
@@ -138,7 +139,6 @@ function shortcutText(keys: string[]): string {
               @mouseenter="activeIdx = filtered.indexOf(c)"
               @click="run(c)"
             >
-              <span class="ic">{{ c.icon }}</span>
               <span class="label">{{ c.label }}</span>
               <span class="group-hint">{{ GROUP_LABELS[c.group] }}</span>
               <span v-if="c.shortcut" class="kb">{{ shortcutText(c.shortcut) }}</span>
@@ -188,7 +188,8 @@ function shortcutText(keys: string[]): string {
 }
 
 .search-icon {
-  font-size: 16px;
+  display: flex;
+  color: var(--el-text-color-placeholder);
 }
 
 .cmdk-head input {
@@ -240,12 +241,6 @@ function shortcutText(keys: string[]): string {
 .cmdk-row.active,
 .cmdk-row:hover {
   background: var(--el-color-primary-light-9);
-}
-
-.cmdk-row .ic {
-  width: 20px;
-  text-align: center;
-  font-size: 14px;
 }
 
 .cmdk-row .label {
